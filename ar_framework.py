@@ -34,6 +34,11 @@ class ToolPack:
         except Exception as e:
             print(e)
             return False
+        
+    # Выбор номера списка iptables в зависимости от type
+    def choice_ip(self):
+        if self.type == "M1": return 0
+        elif self.type == "M2": return 1
 
     # Обновление файла позиции
     @staticmethod 
@@ -59,7 +64,7 @@ class ToolPack:
 
     # Загрузка позиции
     @staticmethod
-    def save_position( x:int, y:int, z:int) -> None:
+    def save_position(x:int, y:int, z:int) -> None:
             try:
                 data = {"X":x, "Y":y, "Z":z}
                 with open("data.pkl", "wb") as file: dump(data, file)
@@ -75,7 +80,7 @@ class Robots:
         self.ToolPack.update_data_files()
         self.vac_status = False
         self.iptables = iptables
-        self.HOST = (self.iptables[0], self.iptables[5])
+        self.HOST = (self.iptables[self.ToolPack.choice_ip()], self.iptables[5])
         self.sleep_time = sleep_time
         self.grap_position = grap_position
         self.Robot = self.Robot_(self, type)
