@@ -1,6 +1,8 @@
 # Импорты (Всё работает на стандартных либах, я этим доволен)
 import socket
 from time import sleep
+from pickle import dump, load
+from os import path
 
 # Пак инструментов для более комфортного и читаемого кода ниже
 class ToolPack:
@@ -33,16 +35,44 @@ class ToolPack:
             print(e)
             return False
 
-# Класс позиции, как будто далее будет удалён или перемещён
-class Position:
-    def __init__(self, x, y, z):
-        self.x, self.y, self.z = x, y, z
+    # Обновление файла позиции
+    @staticmethod 
+    def update_data_files() -> None | bool:
+        try:
+            if not path.exists("data.pkl"):
+                data = {"X": 200, "Y": 0, "Z":90}
+                with open("data.pkl", "wb") as file: dump(data, file)
+            else: return True
+        except Exception as e:
+            print(e)
+            return False
+
+    # Сохранение позиции
+    @staticmethod
+    def load_position() -> list:
+        try:
+            with open("data.pkl", "rb") as file:
+                return load(file)
+        except Exception as e:
+            print(e)
+            return False
+
+    # Загрузка позиции
+    @staticmethod
+    def save_position( x:int, y:int, z:int) -> None:
+            try:
+                data = {"X":x, "Y":y, "Z":z}
+                with open("data.pkl", "wb") as file: dump(data, file)
+                return True
+            except Exception as e:
+                print(e)
+                return False
 
 # Основной класс для всех роботов площадки
 class Robots:
     def __init__(self, iptables, sleep_time = 2, grap_position = 10, type = "M1"):
-        self.position = Position(200, 0, 90)
         self.ToolPack = ToolPack(type=type)
+        self.ToolPack.update_data_files()
         self.vac_status = False
         self.iptables = iptables
         self.HOST = (self.iptables[0], self.iptables[5])
@@ -50,28 +80,24 @@ class Robots:
         self.grap_position = grap_position
         self.Robot = self.Robot_(self, type)
 
-    #Основной класс робота M1 и M2 в зависимости от аргумента type
+    # Основной класс робота M1 и M2 в зависимости от аргумента type
     class Robot_:
         def __init__(self, parent, type):
              self.parent = parent
              self.ToolPack = parent.ToolPack
              self.type = type
 
-        #Возвращает позицию манипулятора M1 или M2
-        def get_position(self) -> Position:
-            return self.parent.position
-        
-        def get_all_position(self) -> Position:
-            return self.parent.position.x, self.parent.position.y, self.parent.position.z
+        # Возвращает позицию манипулятора M1 или M2
+        def get_position(self) -> list:
+            pos = self.parent.ToolPack.load_position()
+            return (pos["X"], pos["Y"], pos["Z"])
 
-        #Функция перемещения (без защиты)
+        # Функция перемещения
         def move_to(self, x:int, y:int, z:int) -> bool:
             try:
                 self.ToolPack._request(HOST=self.parent.HOST, mess=self.ToolPack.combine_package(x=x, y=y, z=z, v=self.parent.vac_status))
 
-                self.parent.position.x = x
-                self.parent.position.y = y
-                self.parent.position.z = z
+                self.parent.ToolPack.save_position(x, y, z)
 
                 sleep(self.parent.sleep_time)
 
@@ -81,40 +107,26 @@ class Robots:
                 return False
 
         # Взять шарик с палетки
-        def pick_ball(self):
+        def pick_ball(self) -> None:
             self.parent.vac_status = True
-            #_request(HOST=self.parent.HOST, mess=f"g:{self.parent.position.x}:{self.parent.position.y}:{self.parent.vac_status}:10:0#")
-            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = self.parent.position.x, y = self.parent.position.y, z = self.parent.grap_position, v = self.parent.vac_status))
+            pos = self.parent.ToolPack.load_position()
+            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = pos["X"], y = pos["Y"],z = self.parent.grap_position, v = self.parent.vac_status))
 
             sleep(self.parent.sleep_time)
 
-            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = self.parent.position.x, y = self.parent.position.y, z = self.parent.position.z, v = self.parent.vac_status))
+            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = pos["X"], y = pos["Y"],z = pos["Z"], v = self.parent.vac_status))
 
         # Положить мяч на палетку
-        def drop_ball(self):
+        def drop_ball(self) -> None:
             self.parent.vac_status = False
-            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = self.parent.position.x, y = self.parent.position.y, z = self.parent.grap_position, v = self.parent.vac_status))
+
+            pos = self.parent.ToolPack.load_position()
+
+            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = pos["X"], y = pos["Y"],z = 10, v = self.parent.vac_status))
 
             sleep(self.parent.sleep_time)
 
-            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = self.parent.position.x, y = self.parent.position.y, z = self.parent.position.z, v = self.parent.vac_status))
-
-        # Перемещает манипулятор M1 или M2 в парковочную зону (с защитой)
-        def go_to_parking(self):
-            x0, y0 = self.parent.position.x, self.parent.position.y
-            x_parking, y_parking = 140, -180
-
-            path = []
-
-            if y0 > 0 and y_parking < 0:
-                path.append((150, 150))
-                path.append((200, 0))
-
-            path.append((x_parking, y_parking))
-
-            for x, y in path:
-                sleep(self.parent.sleep_time)
-                self.move_to(x, y, z=90)
+            self.ToolPack._request(HOST = self.parent.HOST, mess=self.ToolPack.combine_package(x = pos["X"], y = pos["Y"],z = pos["Z"], v = self.parent.vac_status))
 
 
 
